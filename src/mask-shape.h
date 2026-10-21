@@ -42,6 +42,13 @@
 #define MASK_CORNER_CUSTOM 2
 #define MASK_CORNER_CUSTOM_LABEL "AdvancedMasks.CornerType.Custom"
 
+#define MASK_CORNER_STYLE_ROUND 1
+#define MASK_CORNER_STYLE_ROUND_LABEL "AdvancedMasks.CornerStyle.Round"
+#define MASK_CORNER_STYLE_SQUIRCLE 2
+#define MASK_CORNER_STYLE_SQUIRCLE_LABEL "AdvancedMasks.CornerStyle.Squircle"
+#define MASK_CORNER_STYLE_SLANT 3
+#define MASK_CORNER_STYLE_SLANT_LABEL "AdvancedMasks.CornerStyle.Slant"
+
 #define MASK_SHAPE_FEATHER_NONE 1
 #define MASK_SHAPE_FEATHER_NONE_LABEL "AdvancedMasks.Shape.Feather.None"
 #define MASK_SHAPE_FEATHER_INNER 2
@@ -79,6 +86,8 @@ struct mask_shape_data {
 	float feather_amount;
 	float feather_shift;
 	float shape_corner_radius;
+	float shape_corner_style;
+	float shape_squircle_exponent;
 	bool invert_mask;
 
 	// Parameters for rectangle mask
@@ -86,6 +95,8 @@ struct mask_shape_data {
 	float rectangle_height;
 	float zoom;
 	struct vec4 rectangle_corner_radius;
+	struct vec4 rectangle_corner_style;
+	float rectangle_squircle_exponent;
 	float rectangle_max_corner_radius;
 
 	// Parameters for circle mask
@@ -133,6 +144,8 @@ struct mask_shape_data {
 	gs_eparam_t *param_corner_radius;
 	gs_eparam_t *param_rectangle_alpha_zero;
 	gs_eparam_t *param_max_corner_radius;
+	gs_eparam_t *param_rectangle_corner_style;
+	gs_eparam_t *param_rectangle_squircle_exponent;
 	gs_eparam_t *param_rectangle_feather_shift;
 	gs_eparam_t *param_rectangle_feather_amount;
 	gs_eparam_t *param_rect_aspect_ratio;
@@ -175,6 +188,8 @@ struct mask_shape_data {
 	gs_eparam_t *param_polygon_zoom;
 	gs_eparam_t *param_polygon_radius;
 	gs_eparam_t *param_polygon_corner_radius;
+	gs_eparam_t *param_polygon_corner_style;
+	gs_eparam_t *param_polygon_squircle_exponent;
 	gs_eparam_t *param_polygon_num_sides;
 	gs_eparam_t *param_polygon_sin_rot;
 	gs_eparam_t *param_polygon_cos_rot;
@@ -223,6 +238,8 @@ struct mask_shape_data {
 	gs_eparam_t *param_star_cos_rot;
 	gs_eparam_t *param_star_radius;
 	gs_eparam_t *param_star_corner_radius;
+	gs_eparam_t *param_star_corner_style;
+	gs_eparam_t *param_star_squircle_exponent;
 	gs_eparam_t *param_star_an;
 	gs_eparam_t *param_star_en;
 	gs_eparam_t *param_star_acs;
@@ -252,6 +269,8 @@ struct mask_shape_data {
 	gs_eparam_t *param_heart_alpha_zero;
 	gs_eparam_t *param_heart_feather_amount;
 	gs_eparam_t *param_heart_corner_radius;
+	gs_eparam_t *param_heart_corner_style;
+	gs_eparam_t *param_heart_squircle_exponent;
 	gs_eparam_t *param_heart_min_brightness;
 	gs_eparam_t *param_heart_max_brightness;
 	gs_eparam_t *param_heart_min_contrast;
@@ -294,6 +313,8 @@ extern void mask_shape_update(mask_shape_data_t *data, base_filter_data_t *base,
 			      obs_data_t *settings, int version);
 void update_super_formula(mask_shape_data_t* data, obs_data_t* settings);
 extern void mask_shape_defaults(obs_data_t *settings, int version);
+extern bool mask_shape_set_source_size(obs_data_t *settings, uint32_t width,
+				       uint32_t height);
 extern void shape_mask_top_properties(obs_properties_t *props);
 extern void shape_mask_bot_properties(obs_properties_t *props,
 				      obs_source_t *context,
@@ -328,6 +349,11 @@ static void render_superfunction_mask(mask_shape_data_t* data,
 	color_adjustments_data_t* color_adj);
 static bool recenter_button_clicked(obs_properties_t *props,
 				    obs_property_t *property, void *data);
+static bool reset_size_button_clicked(obs_properties_t *props,
+				      obs_property_t *property, void *data);
+static void set_shape_size(obs_data_t *settings, uint32_t shape_type,
+			   uint32_t super_mode, double width, double height,
+			   bool only_unset);
 static bool setting_feather_type_modified(obs_properties_t *props,
 					  obs_property_t *p,
 					  obs_data_t *settings);
@@ -339,6 +365,9 @@ extern bool setting_shape_relative_modified(obs_properties_t *props, obs_propert
 static bool setting_corner_type_modified(obs_properties_t *props,
 					 obs_property_t *p,
 					 obs_data_t *settings);
+static bool setting_shape_corner_style_modified(obs_properties_t *props,
+						obs_property_t *p,
+						obs_data_t *settings);
 static bool setting_scale_type_modified(void *data, obs_properties_t *props,
 					obs_property_t *p,
 					obs_data_t *settings);
@@ -362,6 +391,8 @@ static void load_super_mask_effect(mask_shape_data_t* data);
 static void shape_properties(obs_properties_t *props, obs_source_t *context,
 			     mask_shape_data_t *data);
 static void rectangle_corner_radius_properties(obs_properties_t *props);
+static obs_property_t *corner_style_list(obs_properties_t *props,
+					 const char *name, const char *label);
 static void feather_properties(obs_properties_t *props);
 static void scale_position_properties(obs_properties_t *props,
 				      obs_source_t *context,

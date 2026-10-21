@@ -28,4 +28,5 @@ struct advanced_masks_data {
 
 	bool invert;
 	bool multiPassShader;
+	bool source_size_set;
 };

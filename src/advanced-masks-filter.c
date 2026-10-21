@@ -149,6 +149,12 @@ static void advanced_masks_update(void *data, obs_data_t *settings)
 		obs_data_set_double(settings, "mask_gradient_position",
 				    width / 2.0);
 	}
+	if (!filter->source_size_set &&
+	    mask_shape_set_source_size(settings, filter->base->width,
+				       filter->base->height)) {
+		filter->source_size_set = true;
+		obs_source_update_properties(filter->base->context);
+	}
 	filter->base->mask_effect =
 		(uint32_t)obs_data_get_int(settings, "mask_effect");
 	filter->base->mask_type =
@@ -185,6 +191,12 @@ static void advanced_masks_update_v2(void *data, obs_data_t *settings)
 		double width = (double)obs_source_get_width(filter->base->context);
 		obs_data_set_double(settings, "mask_gradient_position",
 				    width / 2.0);
+	}
+	if (!filter->source_size_set &&
+	    mask_shape_set_source_size(settings, filter->base->width,
+				       filter->base->height)) {
+		filter->source_size_set = true;
+		obs_source_update_properties(filter->base->context);
 	}
 	filter->base->mask_effect =
 		(uint32_t)obs_data_get_int(settings, "mask_effect");
@@ -743,6 +755,12 @@ static void advanced_masks_video_tick(void *data, float seconds)
 	}
 	filter->base->width = (uint32_t)obs_source_get_base_width(target);
 	filter->base->height = (uint32_t)obs_source_get_base_height(target);
+
+	// Shape sizes default to the source size, which is only known once
+	// the filter is attached, so re-run the update the first time it is.
+	if (!filter->source_size_set && filter->base->width > 0) {
+		obs_source_update(filter->base->context, NULL);
+	}
 
 	bool multiPass = advanced_masks_multi_pass(filter);
 	if (!multiPass) {

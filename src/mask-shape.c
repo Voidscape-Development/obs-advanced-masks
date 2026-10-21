@@ -26,6 +26,8 @@ mask_shape_data_t *mask_shape_create()
 	data->param_rect_aspect_ratio = NULL;
 	data->param_rectangle_aa_scale = NULL;
 	data->param_max_corner_radius = NULL;
+	data->param_rectangle_corner_style = NULL;
+	data->param_rectangle_squircle_exponent = NULL;
 	data->param_rectangle_feather_amount = NULL;
 	data->param_rectangle_feather_shift = NULL;
 	data->param_rectangle_zoom = NULL;
@@ -69,6 +71,8 @@ mask_shape_data_t *mask_shape_create()
 	data->param_polygon_global_position = NULL;
 	data->param_polygon_global_scale = NULL;
 	data->param_polygon_corner_radius = NULL;
+	data->param_polygon_corner_style = NULL;
+	data->param_polygon_squircle_exponent = NULL;
 	data->param_polygon_zoom = NULL;
 	data->param_polygon_alpha_zero = NULL;
 	data->param_polygon_feather_amount = NULL;
@@ -111,6 +115,8 @@ mask_shape_data_t *mask_shape_create()
 	data->param_star_alpha_zero = NULL;
 	data->param_star_radius = NULL;
 	data->param_star_corner_radius = NULL;
+	data->param_star_corner_style = NULL;
+	data->param_star_squircle_exponent = NULL;
 	data->param_star_an = NULL;
 	data->param_star_en = NULL;
 	data->param_star_acs = NULL;
@@ -137,6 +143,8 @@ mask_shape_data_t *mask_shape_create()
 	data->param_heart_size = NULL;
 	data->param_heart_zoom = NULL;
 	data->param_heart_corner_radius = NULL;
+	data->param_heart_corner_style = NULL;
+	data->param_heart_squircle_exponent = NULL;
 	data->param_heart_feather_amount = NULL;
 	data->param_heart_min_brightness = NULL;
 	data->param_heart_max_brightness = NULL;
@@ -371,6 +379,28 @@ void mask_shape_update(mask_shape_data_t *data, base_filter_data_t *base,
 		}
 		data->rectangle_max_corner_radius = max_radius;
 	}
+	if (data->corner_radius_type == MASK_CORNER_UNIFORM) {
+		float style = (float)obs_data_get_int(settings,
+						      "rectangle_corner_style");
+		vec4_set(&data->rectangle_corner_style, style, style, style,
+			 style);
+	} else {
+		vec4_set(&data->rectangle_corner_style,
+			 (float)obs_data_get_int(settings,
+						 "rectangle_corner_style_br"),
+			 (float)obs_data_get_int(settings,
+						 "rectangle_corner_style_tr"),
+			 (float)obs_data_get_int(settings,
+						 "rectangle_corner_style_bl"),
+			 (float)obs_data_get_int(settings,
+						 "rectangle_corner_style_tl"));
+	}
+	data->rectangle_squircle_exponent = (float)obs_data_get_double(
+		settings, "rectangle_squircle_exponent");
+	data->shape_corner_style =
+		(float)obs_data_get_int(settings, "shape_corner_style");
+	data->shape_squircle_exponent =
+		(float)obs_data_get_double(settings, "shape_squircle_exponent");
 
 	const double rotation = obs_data_get_double(settings, "shape_rotation");
 	data->rotation = (float)(rotation * M_PI / 180.0f);
@@ -583,6 +613,104 @@ void mask_shape_defaults(obs_data_t *settings, int version)
 	obs_data_set_default_double(settings, "super_n1", 0.5);
 	obs_data_set_default_double(settings, "super_n2", 0.5);
 	obs_data_set_default_double(settings, "super_n3", 16.0);
+	obs_data_set_default_int(settings, "rectangle_corner_style",
+				 MASK_CORNER_STYLE_ROUND);
+	obs_data_set_default_int(settings, "rectangle_corner_style_tl",
+				 MASK_CORNER_STYLE_ROUND);
+	obs_data_set_default_int(settings, "rectangle_corner_style_tr",
+				 MASK_CORNER_STYLE_ROUND);
+	obs_data_set_default_int(settings, "rectangle_corner_style_bl",
+				 MASK_CORNER_STYLE_ROUND);
+	obs_data_set_default_int(settings, "rectangle_corner_style_br",
+				 MASK_CORNER_STYLE_ROUND);
+	obs_data_set_default_double(settings, "rectangle_squircle_exponent",
+				    4.0);
+	obs_data_set_default_int(settings, "shape_corner_style",
+				 MASK_CORNER_STYLE_ROUND);
+	obs_data_set_default_double(settings, "shape_squircle_exponent", 4.0);
+}
+
+// Sets the size settings of a shape type so it fills a width x height
+// source. With only_unset, settings the user has already set are left alone.
+static void set_shape_size(obs_data_t *settings, uint32_t shape_type,
+			   uint32_t super_mode, double width, double height,
+			   bool only_unset)
+{
+	struct {
+		const char *name;
+		double value;
+	} sizes[2] = {{NULL, 0.0}, {NULL, 0.0}};
+	double min_dim = width < height ? width : height;
+
+	switch (shape_type) {
+	case SHAPE_RECTANGLE:
+		sizes[0].name = "rectangle_width";
+		sizes[0].value = width;
+		sizes[1].name = "rectangle_height";
+		sizes[1].value = height;
+		break;
+	case SHAPE_CIRCLE:
+	case SHAPE_POLYGON:
+		sizes[0].name = "circle_radius";
+		sizes[0].value = min_dim / 2.0;
+		break;
+	case SHAPE_ELLIPSE:
+		sizes[0].name = "shape_ellipse_a";
+		sizes[0].value = width;
+		sizes[1].name = "shape_ellipse_b";
+		sizes[1].value = height;
+		break;
+	case SHAPE_STAR:
+		sizes[0].name = "shape_star_outer_radius";
+		sizes[0].value = min_dim / 2.0;
+		break;
+	case SHAPE_HEART:
+		sizes[0].name = "heart_size";
+		sizes[0].value = min_dim;
+		break;
+	case SHAPE_SUPERFORMULA:
+		if (super_mode == SHAPE_SUPER_SQUIRCLE) {
+			sizes[0].name = "super_squircle_size";
+			sizes[0].value = min_dim;
+		} else if (super_mode == SHAPE_SUPER_SUPERELLIPSE) {
+			sizes[0].name = "super_ellipse_width";
+			sizes[0].value = width;
+			sizes[1].name = "super_ellipse_height";
+			sizes[1].value = height;
+		}
+		break;
+	}
+
+	for (size_t i = 0; i < 2; i++) {
+		if (sizes[i].name &&
+		    !(only_unset &&
+		      obs_data_has_user_value(settings, sizes[i].name))) {
+			obs_data_set_double(settings, sizes[i].name,
+					    sizes[i].value);
+		}
+	}
+}
+
+// Sizes every shape to fill the source unless the user already set its
+// size. Returns true once the source size is known.
+bool mask_shape_set_source_size(obs_data_t *settings, uint32_t width,
+				uint32_t height)
+{
+	if (width == 0 || height == 0) {
+		return false;
+	}
+	const uint32_t shape_types[] = {SHAPE_RECTANGLE, SHAPE_CIRCLE,
+					SHAPE_ELLIPSE,   SHAPE_STAR,
+					SHAPE_HEART};
+	for (size_t i = 0; i < OBS_COUNTOF(shape_types); i++) {
+		set_shape_size(settings, shape_types[i], 0, (double)width,
+			       (double)height, true);
+	}
+	set_shape_size(settings, SHAPE_SUPERFORMULA, SHAPE_SUPER_SQUIRCLE,
+		       (double)width, (double)height, true);
+	set_shape_size(settings, SHAPE_SUPERFORMULA, SHAPE_SUPER_SUPERELLIPSE,
+		       (double)width, (double)height, true);
+	return true;
 }
 
 void shape_mask_top_properties(obs_properties_t *props)
@@ -664,6 +792,12 @@ static void shape_properties(obs_properties_t *props, obs_source_t *context,
 				       "recenter_mask_button", label,
 				       recenter_button_clicked, context);
 
+	label_indent(label,
+		     obs_module_text("AdvancedMasks.Shape.ResetSizeButton"));
+	p = obs_properties_add_button2(mask_geometry_group,
+				       "reset_size_button", label,
+				       reset_size_button_clicked, context);
+
 	label_indent(label, obs_module_text("AdvancedMasks.Shape.Rotation"));
 	p = obs_properties_add_float_slider(mask_geometry_group,
 					    "shape_rotation", label, -360.0,
@@ -740,6 +874,17 @@ static void shape_properties(obs_properties_t *props, obs_source_t *context,
 					    "star_corner_radius", label, 0.0,
 					    1000.0, 1.0);
 	obs_property_float_set_suffix(p, "px");
+
+	label_indent(label, obs_module_text("AdvancedMasks.CornerStyle"));
+	p = corner_style_list(mask_geometry_group, "shape_corner_style", label);
+	obs_property_set_modified_callback(p,
+					   setting_shape_corner_style_modified);
+
+	label_indent(label,
+		     obs_module_text("AdvancedMasks.CornerStyle.Smoothness"));
+	p = obs_properties_add_float_slider(mask_geometry_group,
+					    "shape_squircle_exponent", label,
+					    1.0, 20.0, 0.1);
 
 	label_indent(label, obs_module_text("AdvancedMasks.Shape.Heart.Size"));
 	p = obs_properties_add_float_slider(mask_geometry_group, "heart_size",
@@ -927,6 +1072,11 @@ static void rectangle_corner_radius_properties(obs_properties_t *props)
 					    0.0, 1000.0, 1.0);
 	obs_property_float_set_suffix(p, "px");
 
+	label_indent(label, obs_module_text("AdvancedMasks.CornerStyle"));
+	p = corner_style_list(corner_radius_group, "rectangle_corner_style",
+			      label);
+	obs_property_set_modified_callback(p, setting_corner_type_modified);
+
 	label_indent(
 		label,
 		obs_module_text(
@@ -935,6 +1085,14 @@ static void rectangle_corner_radius_properties(obs_properties_t *props)
 					    "rectangle_corner_radius_tl", label,
 					    0.0, 1000.0, 1.0);
 	obs_property_float_set_suffix(p, "px");
+
+	label_indent(
+		label,
+		obs_module_text(
+			"AdvancedMasks.Shape.Rectangle.CornerStyle.TopLeft"));
+	p = corner_style_list(corner_radius_group,
+			      "rectangle_corner_style_tl", label);
+	obs_property_set_modified_callback(p, setting_corner_type_modified);
 
 	label_indent(
 		label,
@@ -948,11 +1106,27 @@ static void rectangle_corner_radius_properties(obs_properties_t *props)
 	label_indent(
 		label,
 		obs_module_text(
+			"AdvancedMasks.Shape.Rectangle.CornerStyle.TopRight"));
+	p = corner_style_list(corner_radius_group,
+			      "rectangle_corner_style_tr", label);
+	obs_property_set_modified_callback(p, setting_corner_type_modified);
+
+	label_indent(
+		label,
+		obs_module_text(
 			"AdvancedMasks.Shape.Rectangle.CornerRadius.BottomLeft"));
 	p = obs_properties_add_float_slider(corner_radius_group,
 					    "rectangle_corner_radius_bl", label,
 					    0.0, 1000.0, 1.0);
 	obs_property_float_set_suffix(p, "px");
+
+	label_indent(
+		label,
+		obs_module_text(
+			"AdvancedMasks.Shape.Rectangle.CornerStyle.BottomLeft"));
+	p = corner_style_list(corner_radius_group,
+			      "rectangle_corner_style_bl", label);
+	obs_property_set_modified_callback(p, setting_corner_type_modified);
 
 	label_indent(
 		label,
@@ -963,11 +1137,43 @@ static void rectangle_corner_radius_properties(obs_properties_t *props)
 					    0.0, 1000.0, 1.0);
 	obs_property_float_set_suffix(p, "px");
 
+	label_indent(
+		label,
+		obs_module_text(
+			"AdvancedMasks.Shape.Rectangle.CornerStyle.BottomRight"));
+	p = corner_style_list(corner_radius_group,
+			      "rectangle_corner_style_br", label);
+	obs_property_set_modified_callback(p, setting_corner_type_modified);
+
+	label_indent(label,
+		     obs_module_text("AdvancedMasks.CornerStyle.Smoothness"));
+	p = obs_properties_add_float_slider(corner_radius_group,
+					    "rectangle_squircle_exponent",
+					    label, 1.0, 20.0, 0.1);
+
 	obs_properties_add_group(
 		props, "rectangle_rounded_corners_group",
 		obs_module_text(
 			"AdvancedMasks.Shape.Rectangle.CornerRadius.CustomGroup"),
 		OBS_GROUP_NORMAL, corner_radius_group);
+}
+
+static obs_property_t *corner_style_list(obs_properties_t *props,
+					 const char *name, const char *label)
+{
+	obs_property_t *p = obs_properties_add_list(props, name, label,
+						    OBS_COMBO_TYPE_LIST,
+						    OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(p,
+				  obs_module_text(MASK_CORNER_STYLE_ROUND_LABEL),
+				  MASK_CORNER_STYLE_ROUND);
+	obs_property_list_add_int(
+		p, obs_module_text(MASK_CORNER_STYLE_SQUIRCLE_LABEL),
+		MASK_CORNER_STYLE_SQUIRCLE);
+	obs_property_list_add_int(p,
+				  obs_module_text(MASK_CORNER_STYLE_SLANT_LABEL),
+				  MASK_CORNER_STYLE_SLANT);
+	return p;
 }
 
 static void scale_position_properties(obs_properties_t *props,
@@ -1052,6 +1258,26 @@ static bool recenter_button_clicked(obs_properties_t *props,
 	obs_data_set_double(settings, "shape_center_x", width / 2.0);
 	obs_data_set_double(settings, "shape_center_y", height / 2.0);
 	obs_source_update(source, settings);
+	obs_data_release(settings);
+	return true;
+}
+
+static bool reset_size_button_clicked(obs_properties_t *props,
+				      obs_property_t *property, void *data)
+{
+	UNUSED_PARAMETER(props);
+	UNUSED_PARAMETER(property);
+	obs_source_t *source = (obs_source_t *)data;
+	obs_data_t *settings = obs_source_get_settings(source);
+	double width = (double)obs_source_get_width(source);
+	double height = (double)obs_source_get_height(source);
+	if (width > 0.0 && height > 0.0) {
+		set_shape_size(settings,
+			       (uint32_t)obs_data_get_int(settings, "shape_type"),
+			       (uint32_t)obs_data_get_int(settings, "super_mode"),
+			       width, height, false);
+		obs_source_update(source, settings);
+	}
 	obs_data_release(settings);
 	return true;
 }
@@ -1310,6 +1536,7 @@ bool setting_shape_type_modified(obs_properties_t *props, obs_property_t *p,
 	obs_property_set_description(group, group_name);
 	setting_visibility("shape_relative", effect_type == MASK_EFFECT_ALPHA,
 			   props);
+	setting_shape_corner_style_modified(props, p, settings);
 	return true;
 }
 
@@ -1409,6 +1636,10 @@ static bool setting_corner_type_modified(obs_properties_t *props,
 	}
 	int corner_type =
 		(int)obs_data_get_int(settings, "rectangle_corner_type");
+	const char *custom_styles[] = {
+		"rectangle_corner_style_tl", "rectangle_corner_style_tr",
+		"rectangle_corner_style_bl", "rectangle_corner_style_br"};
+	bool squircle = false;
 	switch (corner_type) {
 	case MASK_CORNER_UNIFORM:
 		setting_visibility("rectangle_corner_radius", true, props);
@@ -1416,16 +1647,56 @@ static bool setting_corner_type_modified(obs_properties_t *props,
 		setting_visibility("rectangle_corner_radius_tr", false, props);
 		setting_visibility("rectangle_corner_radius_bl", false, props);
 		setting_visibility("rectangle_corner_radius_br", false, props);
-		return true;
+		setting_visibility("rectangle_corner_style", true, props);
+		for (size_t i = 0; i < OBS_COUNTOF(custom_styles); i++) {
+			setting_visibility(custom_styles[i], false, props);
+		}
+		squircle = obs_data_get_int(settings,
+					    "rectangle_corner_style") ==
+			   MASK_CORNER_STYLE_SQUIRCLE;
+		break;
 	case MASK_CORNER_CUSTOM:
 		setting_visibility("rectangle_corner_radius", false, props);
 		setting_visibility("rectangle_corner_radius_tl", true, props);
 		setting_visibility("rectangle_corner_radius_tr", true, props);
 		setting_visibility("rectangle_corner_radius_bl", true, props);
 		setting_visibility("rectangle_corner_radius_br", true, props);
-		return true;
+		setting_visibility("rectangle_corner_style", false, props);
+		for (size_t i = 0; i < OBS_COUNTOF(custom_styles); i++) {
+			setting_visibility(custom_styles[i], true, props);
+			squircle = squircle ||
+				   obs_data_get_int(settings,
+						    custom_styles[i]) ==
+					   MASK_CORNER_STYLE_SQUIRCLE;
+		}
+		break;
+	default:
+		return false;
 	}
-	return false;
+	setting_visibility("rectangle_squircle_exponent", squircle, props);
+	return true;
+}
+
+static bool setting_shape_corner_style_modified(obs_properties_t *props,
+						obs_property_t *p,
+						obs_data_t *settings)
+{
+	UNUSED_PARAMETER(p);
+	if ((uint32_t)obs_data_get_int(settings, "mask_type") !=
+	    MASK_TYPE_SHAPE) {
+		return false;
+	}
+	uint32_t shape_type =
+		(uint32_t)obs_data_get_int(settings, "shape_type");
+	bool has_corners = shape_type == SHAPE_POLYGON ||
+			   shape_type == SHAPE_STAR ||
+			   shape_type == SHAPE_HEART;
+	bool squircle = obs_data_get_int(settings, "shape_corner_style") ==
+			MASK_CORNER_STYLE_SQUIRCLE;
+	setting_visibility("shape_corner_style", has_corners, props);
+	setting_visibility("shape_squircle_exponent", has_corners && squircle,
+			   props);
+	return true;
 }
 
 static bool setting_scale_type_modified(void *data, obs_properties_t *props,
@@ -1688,6 +1959,17 @@ static void render_rectangle_mask(mask_shape_data_t *data,
 					data_to->rectangle_corner_radius.w * f;
 				gs_effect_set_vec4(data->param_corner_radius,
 						   &rectangle_corner_radius);
+				gs_effect_set_vec4(
+					data->param_rectangle_corner_style,
+					f < 0.5f
+						? &data->rectangle_corner_style
+						: &data_to->rectangle_corner_style);
+				gs_effect_set_float(
+					data->param_rectangle_squircle_exponent,
+					data->rectangle_squircle_exponent *
+							(1.0f - f) +
+						data_to->rectangle_squircle_exponent *
+							f);
 
 				float max_corner_radius =
 					(data->rectangle_max_corner_radius /
@@ -1784,6 +2066,12 @@ static void render_rectangle_mask(mask_shape_data_t *data,
 					(1.0f - f);
 				gs_effect_set_vec4(data->param_corner_radius,
 						   &rectangle_corner_radius);
+				gs_effect_set_vec4(
+					data->param_rectangle_corner_style,
+					&data->rectangle_corner_style);
+				gs_effect_set_float(
+					data->param_rectangle_squircle_exponent,
+					data->rectangle_squircle_exponent);
 
 				float max_corner_radius =
 					(data->rectangle_max_corner_radius /
@@ -2009,6 +2297,11 @@ static void render_rectangle_mask(mask_shape_data_t *data,
 					    scale_factor);
 			gs_effect_set_vec4(data->param_corner_radius,
 					   &data->rectangle_corner_radius);
+			gs_effect_set_vec4(data->param_rectangle_corner_style,
+					   &data->rectangle_corner_style);
+			gs_effect_set_float(
+				data->param_rectangle_squircle_exponent,
+				data->rectangle_squircle_exponent);
 
 			float max_corner_radius =
 				data->rectangle_max_corner_radius /
@@ -2163,6 +2456,10 @@ static void render_polygon_mask(mask_shape_data_t *data,
 		gs_effect_set_vec2(data->param_polygon_theta_s, &data->theta_s);
 		gs_effect_set_float(data->param_polygon_corner_radius,
 				    data->shape_corner_radius);
+		gs_effect_set_float(data->param_polygon_corner_style,
+				    data->shape_corner_style);
+		gs_effect_set_float(data->param_polygon_squircle_exponent,
+				    data->shape_squircle_exponent);
 		gs_effect_set_float(data->param_polygon_feather_amount,
 				    data->feather_amount);
 		gs_effect_set_float(data->param_polygon_radius, data->radius);
@@ -2290,6 +2587,10 @@ static void render_star_mask(mask_shape_data_t *data, base_filter_data_t *base,
 				    data->frame_check ? 0.3f : 0.0f);
 		gs_effect_set_float(data->param_star_corner_radius,
 				    data->star_corner_radius);
+		gs_effect_set_float(data->param_star_corner_style,
+				    data->shape_corner_style);
+		gs_effect_set_float(data->param_star_squircle_exponent,
+				    data->shape_squircle_exponent);
 		gs_effect_set_float(data->param_star_an, data->an);
 		gs_effect_set_float(data->param_star_en, data->en);
 		gs_effect_set_vec2(data->param_star_acs, &data->acs);
@@ -2547,6 +2848,10 @@ static void render_heart_mask(mask_shape_data_t *data, base_filter_data_t *base,
 				    (float)cos(data->rotation));
 		gs_effect_set_float(data->param_heart_corner_radius,
 				    data->star_corner_radius);
+		gs_effect_set_float(data->param_heart_corner_style,
+				    data->shape_corner_style);
+		gs_effect_set_float(data->param_heart_squircle_exponent,
+				    data->shape_squircle_exponent);
 		gs_effect_set_float(data->param_heart_feather_amount,
 				    data->feather_amount);
 
@@ -2925,6 +3230,11 @@ static void load_rectangle_mask_effect(mask_shape_data_t *data)
 			} else if (strcmp(info.name, "max_corner_radius") ==
 				   0) {
 				data->param_max_corner_radius = param;
+			} else if (strcmp(info.name, "corner_style") == 0) {
+				data->param_rectangle_corner_style = param;
+			} else if (strcmp(info.name, "squircle_exponent") ==
+				   0) {
+				data->param_rectangle_squircle_exponent = param;
 			} else if (strcmp(info.name, "aspect_ratio") == 0) {
 				data->param_rect_aspect_ratio = param;
 			} else if (strcmp(info.name, "aa_scale") == 0) {
@@ -3103,6 +3413,11 @@ static void load_star_mask_effect(mask_shape_data_t *data)
 				data->param_star_radius = param;
 			} else if (strcmp(info.name, "corner_radius") == 0) {
 				data->param_star_corner_radius = param;
+			} else if (strcmp(info.name, "corner_style") == 0) {
+				data->param_star_corner_style = param;
+			} else if (strcmp(info.name, "squircle_exponent") ==
+				   0) {
+				data->param_star_squircle_exponent = param;
 			} else if (strcmp(info.name, "an") == 0) {
 				data->param_star_an = param;
 			} else if (strcmp(info.name, "en") == 0) {
@@ -3185,6 +3500,11 @@ static void load_polygon_mask_effect(mask_shape_data_t *data)
 				data->param_polygon_theta_s = param;
 			} else if (strcmp(info.name, "corner_radius") == 0) {
 				data->param_polygon_corner_radius = param;
+			} else if (strcmp(info.name, "corner_style") == 0) {
+				data->param_polygon_corner_style = param;
+			} else if (strcmp(info.name, "squircle_exponent") ==
+				   0) {
+				data->param_polygon_squircle_exponent = param;
 			} else if (strcmp(info.name, "feather_amount") == 0) {
 				data->param_polygon_feather_amount = param;
 			} else if (strcmp(info.name, "min_brightness") == 0) {
@@ -3243,6 +3563,11 @@ static void load_heart_mask_effect(mask_shape_data_t *data)
 				data->param_heart_cos_rot = param;
 			} else if (strcmp(info.name, "corner_radius") == 0) {
 				data->param_heart_corner_radius = param;
+			} else if (strcmp(info.name, "corner_style") == 0) {
+				data->param_heart_corner_style = param;
+			} else if (strcmp(info.name, "squircle_exponent") ==
+				   0) {
+				data->param_heart_squircle_exponent = param;
 			} else if (strcmp(info.name, "zoom") == 0) {
 				data->param_heart_zoom = param;
 			} else if (strcmp(info.name, "alpha_zero") == 0) {

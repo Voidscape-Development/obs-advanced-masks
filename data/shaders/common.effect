@@ -10,6 +10,18 @@
 #define PI2 6.283185307f
 #define mod(x, y) (x - y * floor(x / y))
 
+// Anti-aliased coverage (1 inside, 0 outside) for a signed distance d that is
+// negative inside the shape. The ramp is sized from how fast d changes per
+// output pixel rather than per source pixel, so edges stay one screen pixel
+// wide when the source is scaled down (where a fixed 1px ramp would alias) or
+// up (where it would blur), and stay even where d isn't a true Euclidean
+// distance, such as squircle corners. Must be called in uniform control flow.
+float EdgeAlpha(float d)
+{
+	float w = max(fwidth(d), 0.00001f);
+	return saturate(0.5f - d / w);
+}
+
 // Corner styles match MASK_CORNER_STYLE_* in mask-shape.h:
 // 1 = round, 2 = squircle, 3 = slant.
 

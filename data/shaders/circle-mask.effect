@@ -53,7 +53,7 @@ float4 alphaImage(VertData v_in) : TARGET
 	float2 coord_p = coord - shift;
 	float2 dist = coord_p - mask_position; // coord - global_position + mask_position - mask_position
 	float d = SDF(dist, radius);
-	d = feather_amount > 0.0f ? smoothstep(0.0f, feather_amount, -d + feather_amount) : saturate(-(d - 1.0) * zero);
+	d = feather_amount > 0.0f ? smoothstep(0.0f, feather_amount, -d + feather_amount) : EdgeAlpha(d) * zero;
 	
 	float4 color = image.Sample(textureSampler, (mask_position + dist / zoom / global_scale) / uv_size);
 	return float4(color.rgb, (1.0f - invert) * color.a * d + invert * color.a * (1.0f - d));
@@ -70,7 +70,7 @@ float4 alphaFrameCheckImage(VertData v_in) : TARGET
 	float2 sample_uv = (mask_position + dist / zoom / global_scale) / uv_size;
 	float alpha_scale = sample_uv.x >= 0.0f && sample_uv.x <= 1.0f &&
 	sample_uv.y >= 0.0f && sample_uv.y <= 1.0f ? 1.0f : 0.0f;
-	d = feather_amount > 0.0f ? smoothstep(0.0f, feather_amount, -d + feather_amount) : saturate(-(d - 1.0) * zero);
+	d = feather_amount > 0.0f ? smoothstep(0.0f, feather_amount, -d + feather_amount) : EdgeAlpha(d) * zero;
 	d = (1.0f - invert) * d + invert * (1.0 - d);
 	d = (d + alpha_zero) / (1.0 + alpha_zero);
 	
@@ -84,7 +84,7 @@ float4 adjustmentsImage(VertData v_in) : TARGET
 	float2 coord = v_in.uv * uv_size;
 	float2 dist = coord - mask_position;
 	float d = SDF(dist, radius);
-	d = feather_amount > 0.0f ? smoothstep(0.0f, feather_amount, -d + feather_amount) : saturate(-(d - 1.0) * zero);
+	d = feather_amount > 0.0f ? smoothstep(0.0f, feather_amount, -d + feather_amount) : EdgeAlpha(d) * zero;
 	d = (1.0f - invert) * d + invert * (1.0 - d);
 	
 	float4 color = image.Sample(textureSampler, v_in.uv);
